@@ -149,20 +149,22 @@ var samplePts = function(pts,img){
 //note also that the band structure is different in this version than what's generated in QGIS
 
 //train a kmeans model 
-var trainKmeans = function(snic_cluster_pts,min_clusters,max_clusters){
-  var training = ee.Clusterer.wekaCascadeKMeans({minClusters:min_clusters,maxClusters:max_clusters}).train({ 
+var trainKmeans = function(snic_cluster_pts,min_clusters,max_clusters,bandnames){
+  var training = ee.Clusterer.wekaCascadeKMeans({minClusters:min_clusters,maxClusters:max_clusters,init:true}).train({ 
     features: snic_cluster_pts, 
     //real names:["B1_mean", "B2_mean",  "B3_mean",  "B4_mean",  "B5_mean",  "B7_mean",  "B1_1_mean",  "B2_1_mean",  "B3_1_mean",  "B4_1_mean",  "B5_1_mean","B7_1_mean",  "B1_2_mean",  "B2_2_mean",  "B3_2_mean",  "B4_2_mean",  "B5_2_mean",  "B7_2_mean"]
-    inputProperties:["B1_mean", "B2_mean",  "B3_mean",  "B4_mean",  "B5_mean",  "B7_mean",  "B1_1_mean",  "B2_1_mean",  "B3_1_mean",  "B4_1_mean",  "B5_1_mean","B7_1_mean",  "B1_2_mean",  "B2_2_mean",  "B3_2_mean",  "B4_2_mean",  "B5_2_mean",  "B7_2_mean"]
+    //inputProperties:["B1_mean", "B2_mean",  "B3_mean",  "B4_mean",  "B5_mean",  "B7_mean",  "B1_1_mean",  "B2_1_mean",  "B3_1_mean",  "B4_1_mean",  "B5_1_mean","B7_1_mean",  "B1_2_mean",  "B2_2_mean",  "B3_2_mean",  "B4_2_mean",  "B5_2_mean",  "B7_2_mean"]
     // inputProperties:["seed_3",  "seed_4",  "seed_5",  "seed_6",  "seed_7",  "seed_8",  "seed_9",  "seed_10",  "seed_11",  "seed_12","seed_13",  "seed_14",  "seed_15",  "seed_16",  "seed_17",  "seed_18",  "seed_19", "seed_20"]
+    inputProperties:bandnames
+
   });
   return training; 
 }; 
 
 //run the kmeans model - note that the inputs are being created in the snic section in the workflow document 
-var runKmeans = function(snic_cluster_pts,min_clusters,max_clusters,aoi,snic_output){
+var runKmeans = function(snic_cluster_pts,min_clusters,max_clusters,aoi,snic_output,bandnames){
   //train a kmeans model
-  var trainedModel = trainKmeans(snic_cluster_pts,min_clusters,max_clusters); 
+  var trainedModel = trainKmeans(snic_cluster_pts,min_clusters,max_clusters,bandnames); 
   //call the trained kmeans model 
   var clusterSeed = snic_output.cluster(trainedModel)//.clip(aoi); changed 8/23/22
   return clusterSeed; 
@@ -449,7 +451,7 @@ function snic01 (snic_composites,aoi,random_pts,patch_size){
   
   //these were previously the two things that were exported to drive 
   var SNICimagery = SNICoutput.toInt32();//.reproject({  crs: 'EPSG:4326',  scale: 30}); //previously snicImagery
-  var SNICmeans = SNICpixels.toInt32().clip(aoi); //previously SNIC_means_image
+  //var SNICmeans = SNICpixels.toInt32().clip(aoi); //previously SNIC_means_image
   
   //try just creating some random points 
   var snicPts = ee.FeatureCollection.randomPoints({
@@ -477,9 +479,11 @@ exports.snic01 = snic01;
 //////////////////////////////// 02 kMeans //////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 function kmeans02_1 (snicPts,SNICimagery,aoi,min_clusters,max_clusters){
+  // get band names to use in clustering
+  var bandnames = SNICimagery.bandNames().remove('seeds').remove('clusters') // addeed by  peter sep 23 2022
   //take the snic outputs from the previous steps and then train and run a kmeans model
-  var snicKmeansImagery = ee.Image(SNICimagery).select(["B1_mean", "B2_mean",  "B3_mean",  "B4_mean",  "B5_mean",  "B7_mean",  "B1_1_mean",  "B2_1_mean",  "B3_1_mean",  "B4_1_mean",  "B5_1_mean","B7_1_mean",  "B1_2_mean",  "B2_2_mean",  "B3_2_mean",  "B4_2_mean",  "B5_2_mean",  "B7_2_mean"]); 
-  var kMeansImagery = runKmeans(snicPts,min_clusters,max_clusters,aoi,snicKmeansImagery); 
+  var snicKmeansImagery = ee.Image(SNICimagery).select(bandnames); 
+  var kMeansImagery = runKmeans(snicPts,min_clusters,max_clusters,aoi,snicKmeansImagery,bandnames); 
   // var kMeansPoints = selectKmeansPts(kMeansImagery,aoi); 
   return kMeansImagery
   // return ee.List([kMeansImagery,kMeansPoints]); 
@@ -508,7 +512,7 @@ var images_w_indices = computeIndices(full_timeseries);
 var spectralExtraction = runExtraction(images_w_indices, kMeansPts, startYear, endYear);
   
 // Select out the relevant fields
-var abstractImageOutputs = spectralExtraction.select(['cluster_id', 'year', 'NBR', 'TCW', 'TCG', 'NDVI', 'B5'], null, false);//.sort('cluster_id');
+var abstractImageOutputs = spectralExtraction.select(['cluster_id', 'year', 'NBR', 'TCW', 'TCG', 'NDVI', 'B5'], null, true);//.sort('cluster_id');
 
 
 return abstractImageOutputs; 
